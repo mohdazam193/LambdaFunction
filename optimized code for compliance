@@ -1,0 +1,53 @@
+import boto3
+
+ec2 = boto3.client('ec2')
+
+def lambda_handler(event, context):
+    terminate_instances_without_owner_tag()
+    tag_unencrypted_volumes()
+
+def terminate_instances_without_owner_tag():
+    print("Checking for EC2 instances without 'Owner' tag...")
+
+    # Filter only running/pending/stopping/stopped instances missing Owner tag
+    response = ec2.describe_instances(
+        Filters=[
+            {'Name': 'instance-state-name', 'Values': ['pending', 'running', 'stopping', 'stopped']},
+            {'Name': 'tag:Owner', 'Values': ['']}  # Only instances with empty/missing Owner tag
+        ]
+    )
+
+    instances_to_terminate = [
+        instance['InstanceId']
+        for reservation in response['Reservations']
+        for instance in reservation['Instances']
+        if not any(tag['Key'] == 'Owner' and tag['Value'].strip() for tag in instance.get('Tags', []))
+    ]
+
+    if instances_to_terminate:
+        ec2.terminate_instances(InstanceIds=instances_to_terminate)
+        print(f"Terminated instances: {instances_to_terminate}")
+    else:
+        print("No instances without 'Owner' tag found.")
+
+def tag_unencrypted_volumes():
+    print("Scanning for unencrypted EBS volumes...")
+
+    paginator = ec2.get_paginator("describe_volumes")
+    unencrypted_volumes = []
+
+    for page in paginator.paginate(
+        Filters=[{'Name': 'encrypted', 'Values': ['false']}]
+    ):
+        for volume in page['Volumes']:
+            unencrypted_volumes.append(volume['VolumeId'])
+
+    if unencrypted_volumes:
+        # Tag all in one API call instead of looping
+        ec2.create_tags(
+            Resources=unencrypted_volumes,
+            Tags=[{'Key': 'Marked', 'Value': 'Marked for deletion'}]
+        )
+        print(f"Tagged unencrypted volumes: {unencrypted_volumes}")
+    else:
+        print("No unencrypted volumes found.")
