@@ -1,0 +1,62 @@
+import boto3
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+ec2 = boto3.client('ec2')
+
+def terminate_instance(instance_id):
+    try:
+        ec2.terminate_instances(InstanceIds=[instance_id])
+        print(f"Terminated instance: {instance_id}")
+    except Exception as e:
+        print(f"Error terminating {instance_id}: {e}")
+
+def delete_volume(vol_id):
+    try:
+        ec2.delete_volume(VolumeId=vol_id)
+        print(f"Deleted volume: {vol_id}")
+    except Exception as e:
+        print(f"Error deleting {vol_id}: {e}")
+
+def lambda_handler(event, context):
+    print("Event:", event)
+
+    # --- 1. Find untagged instances ---
+    instances = ec2.describe_instances(
+        Filters=[
+            {"Name": "instance-state-name", "Values": ["running", "pending", "stopped"]},
+            {"Name": "tag-key", "Values": []}  # directly filters untagged
+        ]
+    )
+
+    untagged_instances = [
+        i["InstanceId"]
+        for r in instances["Reservations"]
+        for i in r["Instances"]
+    ]
+
+    # --- 2. Find unencrypted tagged volumes ---
+    volumes = ec2.describe_volumes(
+        Filters=[{"Name": "encrypted", "Values": ["false"]}]
+    )["Volumes"]
+
+    tagged_unencrypted_volumes = [
+        v["VolumeId"] for v in volumes if "Tags" in v and not v["Attachments"]
+    ]
+
+    # --- 3. Run in parallel using ThreadPoolExecutor ---
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = []
+
+        # terminate instances in parallel
+        for instance_id in untagged_instances:
+            futures.append(executor.submit(terminate_instance, instance_id))
+
+        # delete volumes in parallel
+        for vol_id in tagged_unencrypted_volumes:
+            futures.append(executor.submit(delete_volume, vol_id))
+
+        # wait for all to complete
+        for future in as_completed(futures):
+            future.result()  # re-raise exceptions if any
+
+    return {"status": "completed"}
