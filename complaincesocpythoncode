@@ -1,0 +1,61 @@
+## code to read and  delete instances without tag and also mark the volumes without encyption to tag as Marked for Deletion 
+
+import boto3
+
+ec2 = boto3.client('ec2')
+
+def lambda_handler(event, context):
+    terminate_instances_without_owner_tag()
+    tag_unencrypted_volumes()
+
+def terminate_instances_without_owner_tag():
+    print("Checking for EC2 instances without 'Owner' tag...")
+
+    # Describe all running instances
+    response = ec2.describe_instances(
+        Filters=[
+            {'Name': 'instance-state-name', 'Values': ['pending', 'running', 'stopping', 'stopped']}
+        ]
+    )
+
+    instances_to_terminate = []
+
+    for reservation in response['Reservations']:
+        for instance in reservation['Instances']:
+            instance_id = instance['InstanceId']
+            tags = instance.get('Tags', [])
+
+            has_owner_tag = any(tag['Key'] == 'Owner' and tag['Value'].strip() for tag in tags)
+
+            if not has_owner_tag:
+                print(f"Instance {instance_id} has no 'Owner' tag. Marking for termination.")
+                instances_to_terminate.append(instance_id)
+
+    if instances_to_terminate:
+        ec2.terminate_instances(InstanceIds=instances_to_terminate)
+        print(f"Terminated instances: {instances_to_terminate}")
+    else:
+        print("No instances without 'Owner' tag found.")
+
+def tag_unencrypted_volumes():
+    print("Scanning for unencrypted EBS volumes...")
+
+    response = ec2.describe_volumes()
+    volumes_to_tag = []
+
+    for volume in response['Volumes']:
+        if not volume['Encrypted']:
+            volume_id = volume['VolumeId']
+            volumes_to_tag.append(volume_id)
+
+    if volumes_to_tag:
+        for volume_id in volumes_to_tag:
+            ec2.create_tags(
+                Resources=[volume_id],
+                Tags=[
+                    {'Key': 'Marked', 'Value': 'Marked for deletion'}
+                ]
+            )
+        print(f"Tagged unencrypted volumes: {volumes_to_tag}")
+    else:
+        print("No unencrypted volumes found.")
