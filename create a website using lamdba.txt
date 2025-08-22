@@ -1,0 +1,104 @@
+from fpdf import FPDF
+
+class PDF(FPDF):
+    def header(self):
+        self.set_font("Arial", "B", 12)
+        self.cell(0, 10, "Creating an API Gateway and Integrating with Lambda", ln=True, align="C")
+        self.ln(5)
+
+    def chapter_title(self, title):
+        self.set_font("Arial", "B", 11)
+        self.cell(0, 10, title, ln=True)
+        self.ln(2)
+
+    def chapter_body(self, body):
+        self.set_font("Arial", "", 10)
+        self.multi_cell(0, 8, body)
+        self.ln()
+
+content = """
+✅ Goal
+Create a website endpoint (via API Gateway) that calls a Lambda function, returning a greeting message.
+
+🔧 Prerequisites
+- AWS account
+- Permissions to create Lambda functions and API Gateway
+- Python file (`lambda_function.py`) ready
+
+🧭 Step-by-Step: API Gateway + Lambda Integration
+
+Step 1: Create a Lambda Function
+1. Go to the AWS Management Console.
+2. Search and go to Lambda.
+3. Click "Create function".
+4. Choose:
+   - Author from scratch
+   - Function name: greetingFunction
+   - Runtime: Python 3.12
+   - Click "Create function"
+5. Paste the following code:
+
+import json
+def lambda_handler(event, context):
+    name = event.get('queryStringParameters', {}).get('name', 'World')
+    return {
+        "statusCode": 200,
+        "headers": { "Content-Type": "application/json" },
+        "body": json.dumps({ "message": f"Hello, {name}!" })
+    }
+
+6. Click Deploy to save.
+
+Step 2: Test the Lambda Function
+1. Click "Test"
+2. Create a test event with this input:
+{
+  "queryStringParameters": {
+    "name": "Alice"
+  }
+}
+3. Click "Test" and confirm output:
+{ "message": "Hello, Alice!" }
+
+Step 3: Create an API Gateway
+1. Go to API Gateway in AWS Console.
+2. Click "Create API"
+3. Choose HTTP API → Click "Build"
+
+Step 4: Connect API Gateway to Lambda
+1. Configure route:
+   - Method: GET
+   - Resource path: /greet
+   - Integration target: greetingFunction
+2. Click Next
+3. Stage name: prod → Click Next
+4. Click Create
+
+Step 5: Deploy and Test
+1. Note the invoke URL: https://abc123xyz.execute-api.region.amazonaws.com/prod
+2. Test with:
+   https://abc123xyz.execute-api.region.amazonaws.com/prod/greet?name=Bob
+3. Response:
+{ "message": "Hello, Bob!" }
+
+🧾 Summary
+Component        | Value
+-----------------|------------------------------
+Lambda Name      | greetingFunction
+API Gateway Type | HTTP API
+Route            | GET /greet
+Full URL         | https://.../greet?name=Bob
+
+🛠️ Bonus Tips
+- To return HTML, change "Content-Type" to "text/html"
+- Use POST to accept body data
+- Enable CORS for frontend browser apps
+"""
+
+pdf = PDF()
+pdf.set_auto_page_break(auto=True, margin=15)
+pdf.add_page()
+pdf.chapter_title("Step-by-Step Guide")
+pdf.chapter_body(content)
+
+pdf.output("api_gateway_lambda_guide.pdf")
